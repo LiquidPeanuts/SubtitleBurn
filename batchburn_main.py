@@ -78,7 +78,7 @@ def get_available_encoders():
         ["ffmpeg", "-hide_banner", "-encoders"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True
+        text=True, encoding="utf-8",errors="replace"
     )
     return result.stdout
 
@@ -117,28 +117,124 @@ def pick_best_encoder(encoders):
 # -----------------------
 # Stream probing (unchanged)
 # -----------------------
+# def get_streams(file_path):
+#     probe_cmd = [
+#         "ffprobe", "-v", "error",
+#         "-show_streams", "-of", "json",
+#         file_path
+#     ]
+#     result = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",errors="replace")
+#     data = json.loads(result.stdout)
+#     audio_choices = []
+#     subtitle_choices = []
+
+#     for stream in data["streams"]:
+#         if stream["codec_type"] == "audio":
+#             idx = stream["index"]
+#             lang = stream.get("tags", {}).get("language", "und")
+#             desc = f"{stream['codec_name']} ({lang}):{idx}"
+#             audio_choices.append(desc)
+#         elif stream["codec_type"] == "subtitle":
+#             idx = stream["index"]
+#             lang = stream.get("tags", {}).get("language", "und")
+#             desc = f"{stream['codec_name']} ({lang}):{idx}"
+#             subtitle_choices.append(desc)
+#     return subtitle_choices, audio_choices
+# def get_streams(file_path):
+#     probe_cmd = [
+#         "ffprobe", "-v", "error",
+#         "-show_streams", "-of", "json",
+#         file_path
+#     ]
+
+#     result = subprocess.run(
+#         probe_cmd,
+#         stdout=subprocess.PIPE,
+#         stderr=subprocess.PIPE,
+#         text=True, encoding="utf-8",errors="replace"
+#     )
+
+#     if not result.stdout.strip():
+#         log(f"ffprobe returned no output for: {file_path}")
+#         return [], []
+
+#     try:
+#         data = json.loads(result.stdout)
+#     except json.JSONDecodeError as e:
+#         log(f"JSON decode failed for {file_path}: {e}")
+#         log(result.stdout)
+#         return [], []
+
+#     streams = data.get("streams", [])
+#     if not streams:
+#         log(f"No streams found in file: {file_path}")
+#         return [], []
+
+#     audio_choices = []
+#     subtitle_choices = []
+
+#     for stream in streams:
+#         codec_type = stream.get("codec_type")
+#         idx = stream.get("index")
+#         lang = stream.get("tags", {}).get("language", "und")
+#         codec = stream.get("codec_name", "unknown")
+
+#         if codec_type == "audio":
+#             audio_choices.append(f"{codec} ({lang}):{idx}")
+#         elif codec_type == "subtitle":
+#             subtitle_choices.append(f"{codec} ({lang}):{idx}")
+
+#     return subtitle_choices, audio_choices
 def get_streams(file_path):
     probe_cmd = [
         "ffprobe", "-v", "error",
         "-show_streams", "-of", "json",
         file_path
     ]
-    result = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    data = json.loads(result.stdout)
+
+    try:
+        result = subprocess.run(
+            probe_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True, encoding="utf-8",errors="replace"
+        )
+    except Exception as e:
+        log(f"ffprobe failed to run on {file_path}: {e}")
+        return [], []
+
+    if result.stdout is None or not result.stdout.strip():
+        log(f"ffprobe returned no stdout for: {file_path}")
+        if result.stderr:
+            log(result.stderr)
+        return [], []
+
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError as e:
+        log(f"Invalid JSON from ffprobe for {file_path}: {e}")
+        log(result.stdout)
+        return [], []
+
+    streams = data.get("streams")
+    if not streams:
+        log(f"No streams key or empty streams for: {file_path}")
+        return [], []
+
     audio_choices = []
     subtitle_choices = []
 
-    for stream in data["streams"]:
-        if stream["codec_type"] == "audio":
-            idx = stream["index"]
-            lang = stream.get("tags", {}).get("language", "und")
-            desc = f"{stream['codec_name']} ({lang}):{idx}"
-            audio_choices.append(desc)
-        elif stream["codec_type"] == "subtitle":
-            idx = stream["index"]
-            lang = stream.get("tags", {}).get("language", "und")
-            desc = f"{stream['codec_name']} ({lang}):{idx}"
-            subtitle_choices.append(desc)
+    for stream in streams:
+        codec_type = stream.get("codec_type")
+        idx = stream.get("index")
+        lang = stream.get("tags", {}).get("language", "und")
+        codec = stream.get("codec_name", "unknown")
+
+        if codec_type == "audio":
+            audio_choices.append(f"{codec} ({lang}):{idx}")
+        elif codec_type == "subtitle":
+            subtitle_choices.append(f"{codec} ({lang}):{idx}")
+
     return subtitle_choices, audio_choices
 
 # -----------------------
@@ -388,7 +484,7 @@ def is_10bit(input_path):
         "-of", "default=nokey=1:noprint_wrappers=1",
         input_path
     ]
-    result = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    result = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",errors="replace")
     pix_fmt = result.stdout.strip()
     return "10" in pix_fmt
 
@@ -468,7 +564,7 @@ def run():
                     "ffmpeg", "-y", "-i", input_f, "-map", f"0:{sub_idx}", subtitle_file
                 ]
                 try:
-                    result = subprocess.run(extract_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                    result = subprocess.run(extract_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",errors="replace")
                     log(result.stdout)
                 except Exception as e:
                     log(f"Failed to extract subtitle for {f}: {e}")
@@ -502,7 +598,7 @@ def run():
             burn_cmd += ["-c:v", chosen_encoder, "-c:a", "copy", output_f]
 
             try:
-                result = subprocess.run(burn_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                result = subprocess.run(burn_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",errors="replace")
                 log(result.stdout)
                 # Remove temporary subtitle file if it exists
                 try:
